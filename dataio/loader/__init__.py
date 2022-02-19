@@ -16,6 +16,8 @@ from dataio.loader.glas_dataset import glas_dataset
 from dataio.loader.siim_acr_dataset import siim_acr_dataset
 from dataio.loader.monuseg_dataset import monuseg_dataset
 from dataio.loader.isic_dataset import isic_dataset
+from dataio.loader.wss_dataset import wss_dataset
+from dataio.loader.crag_dataset import crag_dataset
 
 
 def get_dataset(name):
@@ -41,6 +43,8 @@ def get_dataset(name):
         'asdc':asdc_dataset,
         'cc':cc_dataset,
         'cc_test':cc_dataset_test,
+        'wss':wss_dataset,
+        'crag':crag_dataset,
 
     }[name]
 
@@ -58,9 +62,11 @@ def get_dataset_path(dataset_name, opts):
       "pesol":"F:\\data\\peso_dataset\\scaled_slides_tif",
       "glas":"/data1/uz1/glas",
       "siim":"F:\\data\\siim acr",
-      "monuseg":"F:\Data\MoNuSeg",
+      "monuseg":"/data1/uz1/MoNuSeg/",
       "isic":"F:\\data\\isic",
       "asdc":"F:\\Data\ASDC",
-      "cc":"F:\Data\ct_lesion_seg"
+      "cc":"F:\Data\ct_lesion_seg",
+      "wss":"/home/uz1/data/wsss/valid",
+      "crag":"/data1/uz1/crag/CRAG/",
     }[dataset_name]
     # return getattr(opts, dataset_name)

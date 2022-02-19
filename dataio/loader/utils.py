@@ -66,6 +66,39 @@ def open_target_np_glas(path):
     mask= np.array(im)
     mask[mask!=0]=1
     return mask[:,:,np.newaxis]
+
+color2index = {
+    (0, 64, 128) : 0,
+    (64, 128, 0) : 1,
+    (243, 152, 0) : 2,
+    (255, 255, 255) : 3,
+}
+
+def rgb2mask(img):
+
+    assert len(img.shape) == 3
+    height, width, ch = img.shape
+    assert ch == 3
+
+    W = np.power(256, [[0],[1],[2]])
+
+    img_id = img.dot(W).squeeze(-1) 
+    values = np.unique(img_id)
+
+    mask = np.zeros(img_id.shape)
+
+    for i, c in enumerate(values):
+        try:
+            mask[img_id==c] = color2index[tuple(img[img_id==c][0])] 
+        except:
+            pass
+    return mask
+def open_wss_target(path):
+    im = open_image(path)
+    mask = np.array(im)
+    # mask =rgb2mask(mask)
+
+    return mask[:,:,np.newaxis].astype(np.uint8)
 def open_image_np(path):
     im = open_image(path)
     array = np.array(im)

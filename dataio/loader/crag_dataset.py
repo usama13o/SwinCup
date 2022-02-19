@@ -8,35 +8,32 @@ from os.path import basename
 from .utils import load_nifti_img, check_exceptions, is_image_file, open_image_np,open_target_np, open_target_np_glas, open_target_np_peso;                   
 import random
 
-class monuseg_dataset(data.Dataset):
+class crag_dataset(data.Dataset):
     def find_in_y(self,x):
-        x = basename(x)
-        y_lis = self.target_filenames
-        match = [y for y in self.target_filenames if x in y]
+        x_temp = x.split("/")[-1]
+        match = [y for y in self.target_filenames if x_temp in y if x.split("/")[-3] in y ]
         return match[0]
 
     def __init__(self, root_dir, split, transform=None, preload_data=False,train_pct=0.8,balance=True):
-        super(monuseg_dataset, self).__init__()
-
-        train_dir= join(root_dir,"train folder/img")
-        validation_dir= join(root_dir,"validation folder/img")
-        test_dir = join(root_dir,"test folder/img")
-
+        super(crag_dataset, self).__init__()
+        img_dir= join(root_dir,"train","Images")
+        mask_dir= join(root_dir,"train","Annotation")
+        img_val_dir= join(root_dir,"valid","Images")
+        mask_val_dir= join(root_dir,"valid","Annotation")
         # targets are a comob of two dirs 1- normal 1024 patches 2- Tum 1024
-        self.image_filenames  = sorted([join(train_dir, x) for x in listdir(join(train_dir)) if is_image_file(x)])
-        self.target_filenames = sorted([join(train_dir.replace("img","labelcol"),x) for x in listdir(train_dir.replace("img","labelcol")) if is_image_file(x)])
+        self.image_filenames  = sorted([join(img_dir, x) for x in listdir(img_dir) if is_image_file(x) if "_anno" not in x])
+        self.image_filenames.extend(sorted([join(img_val_dir, x) for x in listdir(img_val_dir) if is_image_file(x) if "_anno" not in x]))
+        self.target_filenames = sorted([join(mask_dir, x) for x in listdir(mask_dir) if is_image_file(x)])
+        self.target_filenames.extend(sorted([join(mask_val_dir, x) for x in listdir(mask_val_dir) if is_image_file(x)]))
         sp= self.target_filenames.__len__()
         sp= int(train_pct *sp)
         random.shuffle(self.image_filenames)
         if split == 'train':
+            self.image_filenames = self.image_filenames[:sp]
+        elif split =='all':
             self.image_filenames = self.image_filenames
-        elif split == 'test':
-
-            self.image_filenames = [join(test_dir,x) for x in listdir(test_dir) if is_image_file(x)]
-            self.target_filenames = sorted([join(test_dir.replace("img","labelcol"),x) for x in listdir(test_dir.replace("img","labelcol")) if is_image_file(x)])
         else:
-            self.image_filenames = [join(validation_dir,x) for x in listdir(validation_dir) if is_image_file(x)]
-            self.target_filenames = sorted([join(validation_dir.replace("img","labelcol"),x) for x in listdir(validation_dir.replace("img","labelcol")) if is_image_file(x)])
+            self.image_filenames = self.image_filenames[sp:]
             # find the mask for the image
         self.target_filenames = [ self.find_in_y((x)) for x in self.image_filenames]
         assert len(self.image_filenames) == len(self.target_filenames)
