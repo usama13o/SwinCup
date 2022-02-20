@@ -2,6 +2,7 @@
 Misc Utility functions
 '''
 
+import logging
 import os
 import numpy as np
 import torch.optim as optim
@@ -487,6 +488,8 @@ def load_checkpoint(model,
         dict or OrderedDict: The loaded checkpoint.
     """
     checkpoint = _load_checkpoint(filename, map_location)
+    logger = logging.getLogger('modelImporter')
+
     # OrderedDict is a subclass of dict
     if not isinstance(checkpoint, dict):
         raise RuntimeError(

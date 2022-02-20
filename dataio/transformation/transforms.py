@@ -96,9 +96,11 @@ class Transformations:
 
     def epi_transform_cropped(self):
         train_transform = ts.Compose([ts.ToTensor(),
-                                    ts.RandomCrop((500,500)),
-                                    ts.RandomCrop((224,224)),
                                       ts.ChannelsFirst(),
+                                    ts.RandomCrop((1000,1000)),
+                                    Resize(size=self.scale_size),
+                                    ts.ToTensor(),
+                                    ts.ChannelsFirst(),
                                       ts.TypeCast(['float', 'float']),
                                       ts.RandomFlip(h=True, v=True, p=self.random_flip_prob),
                                       af.RandomAffine(rotation_range=self.rotate_val, translation_range=self.shift_val,
@@ -112,9 +114,11 @@ class Transformations:
                                 ])
 
         valid_transform = ts.Compose( [ts.ToTensor(),
-                                    ts.RandomCrop((500,500)),
-                                    ts.RandomCrop((224,224)),
-                                        ts.ChannelsFirst(),
+                                      ts.ChannelsFirst(),
+                                    ts.RandomCrop((1000,1000)),
+                                    Resize(size=self.scale_size),
+                                    ts.ToTensor(),
+                                    ts.ChannelsFirst(),
                                       ts.TypeCast(['float', 'float']),
                                       #ts.NormalizeMedicPercentile(norm_flag=(True, False)),
                                     #   ts.NormalizeMedic(norm_flag=(True, False)),
