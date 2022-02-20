@@ -82,7 +82,7 @@ def train(args):
         else:
             model.set_scheduler(train_opts)
         frozen=False
-        model.freeze()
+        # model.freeze()
         for epoch in range(model.which_epoch, train_opts.n_epochs):
             print('(epoch: %d, total # iters: %d)' % (epoch, len(train_loader)))
             #if epoch % 10 == 0:
