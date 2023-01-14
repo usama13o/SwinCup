@@ -42,6 +42,7 @@ class Transformations:
             'cc': self.epi_transform,
             'cc_test': self.epi_transform_TEST,
             'wss': self.epi_transform,
+            'wss_class': self.epi_transform,
             'crag': self.epi_transform_cropped,
 
         }[self.name]()

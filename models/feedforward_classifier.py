@@ -17,7 +17,9 @@ class FeedForwardClassifier(BaseModel):
 
     def name(self):
         return 'FeedForwardClassifier'
-
+    def apply_argmax_softmax(self,pred):
+        log_p = F.softmax(pred, dim=1)
+        return log_p
     def initialize(self, opts, **kwargs):
         BaseModel.initialize(self, opts, **kwargs)
         self.opts = opts
@@ -34,7 +36,7 @@ class FeedForwardClassifier(BaseModel):
                                in_channels=opts.input_nc, nonlocal_mode=opts.nonlocal_mode,
                                tensor_dim=opts.tensor_dim, feature_scale=opts.feature_scale,
                                attention_dsample=opts.attention_dsample,
-                               aggregation_mode=opts.aggregation_mode)
+                               aggregation_mode=opts.aggregation_mode,config = opts)
         if self.use_cuda: self.net = self.net.cuda()
 
         # load the model if a path is specified or it is in inference mode
@@ -65,18 +67,20 @@ class FeedForwardClassifier(BaseModel):
         # for accumulator
         self.reset_results()
 
-    def set_scheduler(self, train_opt):
+    def set_scheduler(self, train_opt,**kwargs):
         for optimizer in self.optimizers:
-            self.schedulers.append(get_scheduler(optimizer, train_opt))
+            self.schedulers.append(get_scheduler(optimizer, train_opt,**kwargs))
             print('Scheduler is added for optimiser {0}'.format(optimizer))
 
     def set_input(self, *inputs):
         # self.input.resize_(inputs[0].size()).copy_(inputs[0])
         for idx, _input in enumerate(inputs):
-            # If it's a 5D array and 2D model then (B x C x H x W x Z) -> (BZ x C x H x W)
+             # If it's a 5D array and 2D model then (B x C x H x W x Z) -> (BZ x C x H x W)
             bs = _input.size()
-            if (self.tensor_dim == '2D') and (len(bs) > 4):
-                _input = _input.permute(0,4,1,2,3).contiguous().view(bs[0]*bs[4], bs[1], bs[2], bs[3])
+            if (len(bs) == 4):
+                _input = _input.permute(0,3,1,2)
+            if (len(bs) > 4):
+                _input = _input.permute(0,1,4,2,3).contiguous().view(bs[0]*bs[1], bs[4], bs[2], bs[3])
 
             # Define that it's a cuda array
             if idx == 0:
@@ -91,8 +95,8 @@ class FeedForwardClassifier(BaseModel):
         elif split in ['validation', 'test']:
             self.prediction = self.net(Variable(self.input, volatile=True))
             # Apply a softmax and return a segmentation map
-            self.logits = self.net.apply_argmax_softmax(self.prediction)
-            self.pred = self.logits.data.max(1)
+            self.logits = self.apply_argmax_softmax(self.prediction)
+            self.pred = self.logits.data.max(1)[1]
 
 
     def backward(self):
@@ -107,6 +111,7 @@ class FeedForwardClassifier(BaseModel):
         self.optimizer.zero_grad()
         self.backward()
         self.optimizer.step()
+        
 
     def test(self):
         self.net.eval()
@@ -126,9 +131,9 @@ class FeedForwardClassifier(BaseModel):
         self.gt_lbls = []
 
     def accumulate_results(self):
-        self.losses.append(self.loss.data[0])
-        self.pr_probs.append(self.pred[0].cpu().numpy())
-        self.pr_lbls.append(self.pred[1].cpu().numpy())
+        self.losses.append(self.loss.item())
+        self.pr_probs.append(self.logits.detach().cpu().numpy())
+        self.pr_lbls.append(self.pred.cpu().numpy())
         self.gt_lbls.append(self.target.data.cpu().numpy())
 
     def get_classification_stats(self):
@@ -144,6 +149,7 @@ class FeedForwardClassifier(BaseModel):
                          colnames=['|accuracy|',' precison|',' recall|',' f1_score|'],
                          rownames=self.labels,
                          data=[self.class_accuracies, self.precisions,self.recalls, self.f1s])
+        self.reset_results()
 
         return OrderedDict([('accuracy', self.accuracy),
                             ('confusion', self.confusion),
@@ -154,7 +160,7 @@ class FeedForwardClassifier(BaseModel):
                             ('breakdown', breakdown)])
 
     def get_current_errors(self):
-        return OrderedDict([('CE', self.loss.data[0])])
+        return OrderedDict([('CE', self.loss.item())])
 
     def get_accumulated_errors(self):
         return OrderedDict([('CE', np.mean(self.losses))])
@@ -174,11 +180,11 @@ class FeedForwardClassifier(BaseModel):
     def set_labels(self, labels):
         self.labels = labels
 
-    def load_network_from_path(self, network, network_filepath, strict):
-        network_label = os.path.basename(network_filepath)
-        epoch_label = network_label.split('_')[0]
-        print('Loading the model {0} - epoch {1}'.format(network_label, epoch_label))
-        network.load_state_dict(torch.load(network_filepath), strict=strict)
+    # def load_network_from_path(self, network, network_filepath, strict):
+    #     network_label = os.path.basename(network_filepath)
+    #     epoch_label = network_label.split('_')[0]
+    #     print('Loading the model {0} - epoch {1}'.format(network_label, epoch_label))
+    #     network.load_state_dict(torch.load(network_filepath), strict=strict)
 
     def update_state(self, epoch):
         pass

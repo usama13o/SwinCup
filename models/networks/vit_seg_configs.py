@@ -32,9 +32,9 @@ def get_testing_swin():
     config.transformer.mlp_dim = 1
     config.transformer.num_heads = 1
     config.transformer.num_layers = 1
-    config.hidden_size=1536
+    config.hidden_size=1024
     config.decoder_channels=[768,384,192,64]
-    config.skip_channels=[768,384,192,96,16]
+    config.skip_channels=[512,256,128,16]
     config.n_skip=3
     return config
 def get_testing_nest():

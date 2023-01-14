@@ -30,7 +30,8 @@ class FeedForwardSegmentation(BaseModel):
         self.input = None
         self.target = None
         self.tensor_dim = opts.tensor_dim
-        print("USING CUDA !!") if self.use_cuda else print("NOT USING CUDA !!!!!")
+        self.gpu_ids=1
+        print("USING CUDA !!cuda:{}".format(self.gpu_ids)) if self.use_cuda else print("NOT USING CUDA !!!!!")
         # load/define networks
         self.net = get_network(opts.model_type, n_classes=opts.output_nc,
                                in_channels=opts.input_nc, nonlocal_mode=opts.nonlocal_mode,
@@ -84,10 +85,10 @@ class FeedForwardSegmentation(BaseModel):
 
             # Define that it's a cuda array
             if idx == 0:
-                self.input = _input.to(device='cuda') if self.use_cuda else _input
+                self.input = _input.to(device='cuda:{}'.format(self.gpu_ids)) if self.use_cuda else _input
             elif idx == 1:
 
-                self.target = Variable(_input.cuda()) if self.use_cuda else Variable(_input)
+                self.target = Variable(_input.to(device='cuda:{}'.format(self.gpu_ids))) if self.use_cuda else Variable(_input)
                 assert self.input.size(2) == self.target.size(2)
 
 

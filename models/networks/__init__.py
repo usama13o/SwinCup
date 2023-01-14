@@ -17,6 +17,8 @@ from .sononet_grid_attention import *
 from .vit_seg_modeling import *
 import pywick.models.segmentation as pws
 from .vit_seg_modeling import CONFIGS as CONFIGS_ViT_seg
+from timm.models.swin_transformer import _create_swin_transformer
+
 
 def get_network(name,config, n_classes, in_channels=3, feature_scale=4, tensor_dim='2D',
                 nonlocal_mode='embedded_gaussian', attention_dsample=(2,2),
@@ -71,6 +73,19 @@ def get_network(name,config, n_classes, in_channels=3, feature_scale=4, tensor_d
     elif name == "swin":
         model = model(img_size= img_size,patch_size=config.patch_size,in_chans=in_channels,num_classes=n_classes,embed_dim=config.embed_dim,depths=config.depth,num_heads=config.num_heads,window_size=config.window_size)
         # model = model(img_size= img_size,num_classes=n_classes)
+
+    elif name == "swin_class":
+        model_kwargs = dict(
+        patch_size=4,
+        window_size=7,
+        embed_dim=128,
+        depths=(2, 2, 18, 2),
+        num_heads=(4, 8, 16, 32),
+        num_classes=n_classes,
+    )
+        model =  _create_swin_transformer(
+        "swin_large_patch4_window7_224", pretrained=False, **model_kwargs
+    )
     elif name == "swin_unet":
         model = model(img_size= img_size,patch_size=config.patch_size,in_chans=in_channels,num_classes = n_classes,embed_dim=config.embed_dim,depths=config.depth,num_heads=config.num_heads,window_size=config.window_size)
     elif name== "logo":
@@ -111,7 +126,8 @@ def _get_model_instance(name, tensor_dim):
         'R50-ViT-B_32': {'2D':VisionTransformer},
         'R50-ViT-B_16': {'2D':VisionTransformer},
         'R50-ViT-B_16_AG': {'2D':VisionTransformer_AG},
-        'swin': {'2D':SwinTransformer},
+        'swin': {'2D':SwinTransformer,"class":"class"},
+        'swin_class': {'2D':SwinTransformer,},
         'swin_unet': {'2D':SwinTransformerSys},
         'R50-ViT-L_16': {'2D':VisionTransformer},
         'nest': {'2D':Nest},

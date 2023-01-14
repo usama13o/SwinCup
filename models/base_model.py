@@ -15,7 +15,7 @@ class BaseModel():
         self.schedulers = []
         self.optimizers = []
         self.save_dir = None
-        self.gpu_ids = []
+        self.gpu_ids = [1]
         self.which_epoch = int(0)
         self.path_pre_trained_model = None
 

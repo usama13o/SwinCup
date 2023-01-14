@@ -25,7 +25,7 @@ def cross_entropy_3D(input, target, weight=None, size_average=True):
         loss /= float(target.numel())
     return loss
 
-def ce_loss(logits, true, weights=[0.1,0.59,0.9], ignore=0):
+def ce_loss(logits, true, weights=None, ignore=0):
     """Computes the weighted multi-class cross-entropy loss.
     Args:
         true: a tensor of shape [B, 1, H, W].
@@ -38,14 +38,18 @@ def ce_loss(logits, true, weights=[0.1,0.59,0.9], ignore=0):
         ce_loss: the weighted multi-class cross-entropy loss.
     """
 
-    weights = torch.FloatTensor(weights).cuda() if torch.cuda.is_available() else torch.FloatTensor(weights)
+    weights = torch.FloatTensor(weights).to(logits.device) if weights is not None else None
     true = true.squeeze(1)
-    ce_loss = F.cross_entropy(
-        logits.float(),
-        true.long(),
-        ignore_index=ignore,
-        weight=weights,
-    )
+    try:
+        ce_loss = F.cross_entropy(
+            logits.float(),
+            true.long(),
+            ignore_index=ignore,
+            weight=weights,
+        )
+    except:
+        print(true.shape, logits.shape)
+        raise ValueError('Error in cross entropy loss')
     return ce_loss
 
 class SoftDiceLoss(nn.Module):
@@ -133,7 +137,7 @@ class IoU_loss(nn.Module):
             # Take softmax along class dimension; all class probs add to 1 (per pixel)
             probas = F.softmax(preds, dim=1)
             
-        true_1_hot = true_1_hot.type(preds.type())
+        true_1_hot = true_1_hot.type(preds.type()).to(preds.device)
         
         # Sum probabilities by class and across batch images
         dims = (0,) + tuple(range(2, targs.ndimension()))

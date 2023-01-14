@@ -16,7 +16,7 @@ from dataio.loader.glas_dataset import glas_dataset
 from dataio.loader.siim_acr_dataset import siim_acr_dataset
 from dataio.loader.monuseg_dataset import monuseg_dataset
 from dataio.loader.isic_dataset import isic_dataset
-from dataio.loader.wss_dataset import wss_dataset
+from dataio.loader.wss_dataset import wss_dataset,wss_dataset_class
 from dataio.loader.crag_dataset import crag_dataset
 
 
@@ -45,6 +45,7 @@ def get_dataset(name):
         'cc_test':cc_dataset_test,
         'wss':wss_dataset,
         'crag':crag_dataset,
+        'wss_class':wss_dataset_class,
 
     }[name]
 
@@ -67,6 +68,7 @@ def get_dataset_path(dataset_name, opts):
       "asdc":"F:\\Data\ASDC",
       "cc":"F:\Data\ct_lesion_seg",
       "wss":"/home/uz1/data/wsss/valid",
+      "wss_class":"/home/uz1/data/wsss/train/1.training",
       "crag":"/data1/uz1/crag/CRAG/",
     }[dataset_name]
     # return getattr(opts, dataset_name)

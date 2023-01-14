@@ -2,7 +2,10 @@ import numpy as np
 from torch.utils.data import DataLoader, sampler
 from tqdm import tqdm
 
+import os
 
+from utils.util import json_file_to_dict_args, json_file_to_pyobj,get_tags
+from pytorch_lightning.utilities.seed import seed_everything
 from dataio.loader import get_dataset, get_dataset_path
 from dataio.transformation import get_dataset_transformation
 from utils.util import json_file_to_pyobj
@@ -10,6 +13,7 @@ from utils.visualiser import Visualiser
 from utils.error_logger import ErrorLogger
 from models.networks_other import adjust_learning_rate
 
+from torch.utils.data.sampler import SubsetRandomSampler
 from models import get_model
 
 
@@ -75,165 +79,137 @@ def check_warm_start(epoch, model, train_opts):
 
 def train(arguments):
 
-    # Parse input arguments
-    json_filename = arguments.config
-    network_debug = arguments.debug
-
     # Load options
-    json_opts = json_file_to_pyobj(json_filename)
+    json_opts = json_file_to_pyobj(args.config,args)
+    wanb_config= get_tags(json_file_to_dict_args(args.config,args),args)
+
     train_opts = json_opts.training
 
     # Architecture type
-    arch_type = train_opts.arch_type
+    arch_type =  train_opts.arch_type
 
     # Setup Dataset and Augmentation
     ds_class = get_dataset(arch_type)
     ds_path  = get_dataset_path(arch_type, json_opts.data_path)
     ds_transform = get_dataset_transformation(arch_type, opts=json_opts.augmentation)
 
-    # Setup the NN Model
-    model = get_model(json_opts.model)
-    if network_debug:
-        print('# of pars: ', model.get_number_parameters())
-        print('fp time: {0:.3f} sec\tbp time: {1:.3f} sec per sample'.format(*model.get_fp_bp_time()))
-        exit()
-
     # Setup Data Loader
-    num_workers = train_opts.num_workers if hasattr(train_opts, 'num_workers') else 16
-    train_dataset = ds_class(ds_path, split='train', transform=ds_transform['train'], preload_data=train_opts.preloadData)
-    valid_dataset = ds_class(ds_path, split='val',   transform=ds_transform['valid'], preload_data=train_opts.preloadData)
-    test_dataset  = ds_class(ds_path, split='test',  transform=ds_transform['valid'], preload_data=train_opts.preloadData)
 
-    # create sampler
-    if train_opts.sampler == 'stratified':
-        print('stratified sampler')
-        train_sampler = StratifiedSampler(train_dataset.labels, train_opts.batchSize)
-        batch_size = 52
-    elif train_opts.sampler == 'weighted2':
-        print('weighted sampler with background weight={}x'.format(train_opts.bgd_weight_multiplier))
-        # modify and increase background weight
-        weight = train_dataset.weight
-        bgd_weight = np.min(weight)
-        weight[abs(weight - bgd_weight) < 1e-8] = bgd_weight * train_opts.bgd_weight_multiplier
-        train_sampler = sampler.WeightedRandomSampler(weight, len(train_dataset.weight))
-        batch_size = train_opts.batchSize
-    else:
-        print('weighted sampler')
-        train_sampler = sampler.WeightedRandomSampler(train_dataset.weight, len(train_dataset.weight))
-        batch_size = train_opts.batchSize
+    seed_everything(5)
+    from sklearn.model_selection import KFold
+    train_dataset = ds_class(ds_path, split='all',      transform=ds_transform['train'], preload_data=train_opts.preloadData,balance=False)
 
-    # loader
-    train_loader = DataLoader(dataset=train_dataset, num_workers=num_workers,
-                              batch_size=batch_size, sampler=train_sampler)
-    valid_loader = DataLoader(dataset=valid_dataset, num_workers=num_workers, batch_size=train_opts.batchSize, shuffle=True)
-    test_loader  = DataLoader(dataset=test_dataset,  num_workers=num_workers, batch_size=train_opts.batchSize, shuffle=True)
+    splits=KFold(n_splits=args.cross_val,shuffle=True,random_state=int(os.environ.get("PL_GLOBAL_SEED")))
 
-    # Visualisation Parameters
-    visualizer = Visualiser(json_opts.visualisation, save_dir=model.save_dir)
-    error_logger = ErrorLogger()
 
-    # Training Function
-    track_labels = np.arange(len(train_dataset.label_names))
-    model.set_labels(track_labels)
-    model.set_scheduler(train_opts)
-    
-    if hasattr(model, 'update_state'):
-        model.update_state(0)
 
-    for epoch in range(model.which_epoch, train_opts.n_epochs):
-        print('(epoch: %d, total # iters: %d)' % (epoch, len(train_loader)))
+    for fold, (train_idx,val_idx) in enumerate(splits.split(np.arange(len(train_dataset)))):
+        #re-init model each fold 
+        model = get_model(json_opts.model)
 
-        # # # --- Start ---
-        # import matplotlib.pyplot as plt
-        # plt.ion()
-        # plt.figure()
-        # target_arr = np.zeros(14)
-        # # # --- End ---
+        
+        train_sampler = SubsetRandomSampler(train_idx)
+        
+        test_sampler = SubsetRandomSampler(val_idx)
+        train_loader = DataLoader(dataset=train_dataset, num_workers=24, batch_size= train_opts.batchSize, shuffle=False,pin_memory=True,persistent_workers=False,sampler=train_sampler)
+        valid_loader= DataLoader(dataset=train_dataset, num_workers=24, batch_size= train_opts.batchSize, shuffle=False,pin_memory=True,persistent_workers=False,sampler=test_sampler)
+        wanb_config['tags'] = wanb_config['tags']+'_fold_{}'.format(fold)
 
-        # Training Iterations
-        for epoch_iter, (images, labels) in tqdm(enumerate(train_loader, 1), total=len(train_loader)):
-            # Make a training update
-            model.set_input(images, labels)
-            model.optimize_parameters()
+        visualizer = Visualiser(json_opts.visualisation, save_dir=model.save_dir,resume= False if json_opts.model.continue_train else False,config=wanb_config)
+        error_logger = ErrorLogger()
+        start_epoch = False if json_opts.training.n_epochs < json_opts.model.which_epoch else json_opts.model.continue_train
+        if train_opts.lr_policy == "one_cycle":
+            model.set_scheduler(train_opts,len_train=len(train_loader),max_lr=json_opts.model.max_lr,division_factor=json_opts.model.division_factor,last_epoch=json_opts.model.which_epoch * len(train_loader) if start_epoch else -1)
+        else:
+            model.set_scheduler(train_opts)
+        frozen=False
+        # model.freeze()
+        for epoch in range(model.which_epoch, train_opts.n_epochs):
+            print('(epoch: %d, total # iters: %d)' % (epoch, len(train_loader)))
+            #if epoch % 10 == 0:
+                #if frozen:
+                    #model.unfreeze()
+                    #frozen = False
+                #else: 
+                    #print("freezing model")
+                    #model.freeze()
+                    #frozen=True
 
-            if epoch == (train_opts.n_epochs-1):
-                import time
-                time.sleep(36000)
+            # Training Iterations
 
-            if train_opts.max_it == epoch_iter:
-                break
-
-            # # # --- visualise distribution ---
-            # for lab in labels.numpy():
-            #     target_arr[lab] += 1
-            # plt.clf(); plt.bar(train_dataset.label_names, target_arr); plt.pause(0.01)
-            # # # --- End ---
-
-                # Visualise predictions
-            if epoch_iter <= 100:
-                visuals = model.get_current_visuals()
-                visualizer.display_current_results(visuals, epoch=epoch, save_result=False)
-
-            # Error visualisation
-            errors = model.get_current_errors()
-            error_logger.update(errors, split='train')
-
-        # Validation and Testing Iterations
-        pr_lbls = []
-        gt_lbls = []
-        for loader, split in zip([valid_loader, test_loader], ['validation', 'test']):
-            model.reset_results()
-
-            for epoch_iter, (images, labels) in tqdm(enumerate(loader, 1), total=len(loader)):
-
-                # Make a forward pass with the model
+            for epoch_iter, (images, labels) in tqdm(enumerate(train_loader, 1), total=len(train_loader)):
+                # Make a training update
                 model.set_input(images, labels)
-                model.validate()
+                # with torch.autograd.set_detect_anomaly(True):
+                model.optimize_parameters()
+                # model.optimize_parameters_accumulate_grd(epoch_iter)
+                lr = model.update_learning_rate()
+                
+                
+                lr = {"lr":lr}
+                # Error visualisation
+                errors = model.get_current_errors()
+                # stats = model.get_classification_stats()
+                error_logger.update({**errors,**lr}, split='train')
+                visualizer.plot_current_errors(epoch, error_logger.get_errors('train'), split_name='train')
 
-                # Visualise predictions
-                visuals = model.get_current_visuals()
-                visualizer.display_current_results(visuals, epoch=epoch, save_result=False)
 
-                if train_opts.max_it == epoch_iter:
-                    break
+            # Validation and Testing Iterations
+            for loader, split in zip([valid_loader], ['validation']):
+                for epoch_iter, (images, labels) in tqdm(enumerate(loader, 1), total=len(loader)):
 
-            # Error visualisation
-            errors = model.get_accumulated_errors()
-            stats = model.get_classification_stats()
-            error_logger.update({**errors, **stats}, split=split)
+                    # Make a forward pass with the model
+                    model.set_input(images, labels)
+                    model.validate()
 
-            # HACK save validation error
-            if split == 'validation':
-                valid_err = errors['CE']
+                    # Error visualisation
+                    errors = model.get_current_errors()
+                    stats = model.get_classification_stats()
+                    error_logger.update({**errors, **stats}, split=split)
 
-        # Update the plots
-        for split in ['train', 'validation', 'test']:
-            # exclude bckground
-            #track_labels = np.delete(track_labels, 3)
-            #show_labels = train_dataset.label_names[:3] + train_dataset.label_names[4:]
-            show_labels = train_dataset.label_names
-            visualizer.plot_current_errors(epoch, error_logger.get_errors(split), split_name=split, labels=show_labels)
-            visualizer.print_current_errors(epoch, error_logger.get_errors(split), split_name=split)
-        error_logger.reset()
+                    # Visualise predictions
+                    visuals = model.get_current_visuals()
+                    # visualizer.display_current_results(visuals, epoch=epoch, save_result=False)
 
-        # Save the model parameters
-        if epoch % train_opts.save_epoch_freq == 0:
-            model.save(epoch)
+            # Update the plots
+            for split in ['validation']:
+                visualizer.plot_current_errors(epoch, error_logger.get_errors(split), split_name=split)
+                visualizer.print_current_errors(epoch, error_logger.get_errors(split), split_name=split)
+            error_logger.reset()
+            visualizer.upload_limit=45
 
-        if hasattr(model, 'update_state'):
-            model.update_state(epoch)
+            # Save the model parameters
+            if epoch % train_opts.save_epoch_freq == 0:
+                model.save(epoch)
+                visualizer.save_model(epoch)
 
-        # Update the model learning rate
-        model.update_learning_rate(metric=valid_err, epoch=epoch)
+            # Update the model learning rate
+            # model.update_learning_rate(errors['Seg_Loss'])
+        visualizer.finish()
+        del train_loader,valid_loader
 
 
 if __name__ == '__main__':
     import argparse
 
-    parser = argparse.ArgumentParser(description='CNN Classification Training Function')
+    parser = argparse.ArgumentParser(description='CNN Seg Training Function')
+    parser.add_argument('-c', '--config',  help='training config file', required=False,type=str)
 
-    parser.add_argument('-c', '--config',  help='training config file', required=True)
     parser.add_argument('-d', '--debug',   help='returns number of parameters and bp/fp runtime', action='store_true')
+    parser.add_argument('-a', '--arch_type',   help='wich architecture type')
+    parser.add_argument('-wandb', '--use_wandb',   help='use wandb to log the training',type=bool)
+    parser.add_argument('-cont', '--continue_train',   help='Should contine training?',type=bool)
+    parser.add_argument('-seed',help='Use the same seed>',type=bool)
+    parser.add_argument('-wep', '--which_epoch',   help='which epoch to continue training from?',type=int)
+    parser.add_argument('-maxlr', '--max_lr',   help='maximum learning rate for cyclic learning',  type=float)
+    parser.add_argument('-bs', '--batchSize',   help='batch size',type=int)
+    parser.add_argument('-cv', '--cross_val',   help='Cross validation folds',type=int,default=1)
+    parser.add_argument('-ep', '--n_epochs',   help='number of epochs', type=int)
+    parser.add_argument('-img', '--img_size',   help='number of epochs', type=int)
+    parser.add_argument('-out', '--output_nc',   help='Number of output classes', type=int)
+    parser.add_argument('-pretrain', '--path_pre_trained_model',   help='path to pre trained model', type=str)
+    parser.add_argument('-tag',   help='tags passed to wandb' , type=str,default="")
+    parser.add_argument('--gpu_ids',   help='gpu id to use for trianing' , type=int,default=0)
     args = parser.parse_args()
 
     train(args)

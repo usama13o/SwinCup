@@ -96,8 +96,7 @@ def segmentation_stats(pred_seg, target):
 def classification_scores(gts, preds, labels):
     accuracy        = metrics.accuracy_score(gts,  preds)
     class_accuracies = []
-    for lab in labels: # TODO Fix
-        class_accuracies.append(metrics.accuracy_score(gts[gts == lab], preds[gts == lab]))
+    class_accuracies.append(metrics.accuracy_score(gts, preds))
     class_accuracies = np.array(class_accuracies)
 
     f1_micro        = metrics.f1_score(gts,        preds, average='micro')
@@ -511,7 +510,8 @@ def load_checkpoint(model,
     
     if list(state_dict.keys())[0].startswith('backbone.'): 
         state_dict = {k[9:]: v for k, v in state_dict.items()}
-
+   
+    state_dict = {k.replace('norm','NORMy'):v for k,v in state_dict.items()}
 
     # reshape absolute position embedding
     if state_dict.get('absolute_pos_embed') is not None:
