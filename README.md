@@ -1,26 +1,19 @@
-# Attention Gated Networks <br /> (Image Classification & Segmentation)
+# SwinCup <br /> 
 
-Pytorch implementation of attention gates used in U-Net and VGG-16 models. The framework can be utilised in both medical image classification and segmentation tasks. 
+Pytorch implementation of SwinCup: Cascaded Swin Transformer for Histopathological Structures Segmentation in Colorectal Cancer
+## Abstract
+Transformer models have recently become the dominant architecture in many computer vision tasks, including image classification, object detection, and image segmentation. The main reason behind their success is the ability to incorporate global context information into the learning process. By utilising self-attention, recent advancements in the Transformer architecture design enable models to consider long-range dependencies. In this paper, we propose a novel transformer, named Swin Transformer with Cascaded UPsampling (SwinCup) model for the segmentation of histopathology images. We use a hierarchical Swin Transformer with shifted windows as an encoder to extract global context features. The multi-scale feature extraction in a Swin transformer enables the model to attend to different areas in the image at different scales. A cascaded up-sampling decoder is used with an encoder to improve its feature aggregation. Experiments on GLAS and CRAG histopathology colorectal cancer datasets were used to validate the model.
 
-<p align="center">
-    <img src="figures/figure1.png" width="640"> <br />
-    <em> The schematics of the proposed Attention-Gated Sononet</em>
-</p>
-
-<p align="center">
-    <img src="figures/figure2.jpg" width="640"> <br />
-    <em> The schematics of the proposed additive attention gate</em>
-</p>
+# Model Architecture
+<img src="figures/fig 1.jpg"> <br />
+### Results
 
 ### References:
+If you find this helpful, please cite our paper:
 
-1) "Attention-Gated Networks for Improving Ultrasound Scan Plane Detection", MIDL'18, Amsterdam <br />
-[Conference Paper](https://openreview.net/pdf?id=BJtn7-3sM) <br />
-[Conference Poster](https://www.doc.ic.ac.uk/~oo2113/posters/MIDL2018_poster_Jo.pdf)
+1) "SwinCup: Cascaded Swin Transformer for Histopathological Structures Segmentation in Colorectal Cancer", <br />
+[ Paper](https://doi.org/10.1016/j.eswa.2022.119452) <br />
 
-2) "Attention U-Net: Learning Where to Look for the Pancreas", MIDL'18, Amsterdam <br />
-[Conference Paper](https://openreview.net/pdf?id=Skft7cijM) <br />
-[Conference Poster](https://www.doc.ic.ac.uk/~oo2113/posters/MIDL2018_poster.pdf)
 
 ### Installation
 pip install --process-dependency-links -e .
