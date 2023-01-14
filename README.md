@@ -6,12 +6,12 @@ Transformer models have recently become the dominant architecture in many comput
 
 # Model Architecture
 <img src="figures/fig 1.jpg"> <br />
-### Results
 
 ### References:
 If you find this helpful, please cite our paper:
 
-1) "SwinCup: Cascaded Swin Transformer for Histopathological Structures Segmentation in Colorectal Cancer", <br />
+1) "Usama Zidan, Mohamed Medhat Gaber, Mohammed M. Abdelsamea,
+SwinCup: Cascaded swin transformer for histopathological structures segmentation in colorectal cancer, Expert Systems with Applications, Volume 216, 2023." <br />
 [ Paper](https://doi.org/10.1016/j.eswa.2022.119452) <br />
 
 
