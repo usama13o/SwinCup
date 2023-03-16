@@ -133,3 +133,11 @@ configs/*
 models/networks/output_featuresmaps/
 output_preds/
 moco/
+*.yaml
+*.yml
+*events.out.tfevents*
+*.png
+*.tsv
+*.csv
+*.json
+*.pbtxt

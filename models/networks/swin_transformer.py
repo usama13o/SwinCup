@@ -587,13 +587,6 @@ class SwinTransformer(nn.Module):
         self.scale = 128 ** -0.5
         # self.mask_Transformer = MaskTransformer_2(d_model=128,d_ff=128*4,n_cls=num_classes,n_layers=6,n_heads=8,patch_size=patch_size/2,d_encoder=128)
 
-        self.mask_Transformer_16 = MaskTransformer_2(img_size=img_size,d_model=512,d_ff=128*4,n_cls=num_classes,n_layers=6,n_heads=8,patch_size=patch_size*4,d_encoder=512)
-        self.mask_Transformer_32 = MaskTransformer_2(img_size=img_size,d_model=256,d_ff=128*4,n_cls=num_classes,n_layers=6,n_heads=8,patch_size=patch_size*2,d_encoder=256)
-        self.mask_Transformer_64 = MaskTransformer_2(img_size=img_size,d_model=128,d_ff=128*4,n_cls=num_classes,n_layers=6,n_heads=8,patch_size=patch_size,d_encoder=128)
-        
-        self.dsv4 = UnetDsv2(in_size=512, out_size=num_classes, scale_factor=16)
-        self.dsv3 = UnetDsv2(in_size=256, out_size=num_classes, scale_factor=8)
-        self.dsv2 = UnetDsv2(in_size=128, out_size=num_classes, scale_factor=4)
         self.up3= nn.Sequential(
             Rearrange("b (p1 p2) c -> b c p1 p2",p1=img_size//4,p2=img_size//4),
         )
