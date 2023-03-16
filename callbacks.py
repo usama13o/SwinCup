@@ -37,7 +37,7 @@ class TestReconCallback_vae(pl.Callback):
             with torch.no_grad():
                 pl_module.eval()
                 # print("Encoding !")
-                x_encoded = vae.encoder.forward_features(input_imgs)
+                x_encoded = vae.encoder(input_imgs)
                 # print("encoded, ", x_encoded.shape)
                 
 
