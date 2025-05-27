@@ -21,15 +21,15 @@ class FeedForwardClassifier(BaseModel):
         log_p = F.softmax(pred, dim=1)
         return log_p
     def initialize(self, opts, **kwargs):
-        BaseModel.initialize(self, opts, **kwargs)
-        self.opts = opts
+        super().initialize(opts) # Calls BaseModel.initialize(self, opts)
+        self.opts = opts # Retain for local use if needed
         self.isTrain = opts.isTrain
 
         # define network input and output pars
-        self.input = None
-        self.target = None
-        self.labels = None
+        # self.input_images and self.input_labels will be set by set_input
+        self.labels = None # For classification task labels
         self.tensor_dim = opts.tensor_dim
+        print(f"Classifier Model initialized on device: {self.device}")
 
         # load/define networks
         self.net = get_network(opts.model_type, n_classes=opts.output_nc,
@@ -37,9 +37,13 @@ class FeedForwardClassifier(BaseModel):
                                tensor_dim=opts.tensor_dim, feature_scale=opts.feature_scale,
                                attention_dsample=opts.attention_dsample,
                                aggregation_mode=opts.aggregation_mode,config = opts)
-        if self.use_cuda: self.net = self.net.cuda()
+        if self.net is not None:
+            self.net.to(self.device) # Move the network to the configured device
+        else:
+            raise RuntimeError("self.net was not initialized by get_network in FeedForwardClassifier.")
 
         # load the model if a path is specified or it is in inference mode
+        # BaseModel's load_network_from_path and load_network now handle moving to self.device
         if not self.isTrain or opts.continue_train:
             self.path_pre_trained_model = opts.path_pre_trained_model
             if self.path_pre_trained_model:
@@ -76,40 +80,41 @@ class FeedForwardClassifier(BaseModel):
         # self.input.resize_(inputs[0].size()).copy_(inputs[0])
         for idx, _input in enumerate(inputs):
              # If it's a 5D array and 2D model then (B x C x H x W x Z) -> (BZ x C x H x W)
-            bs = _input.size()
-            if (len(bs) == 4):
-                _input = _input.permute(0,3,1,2)
-            if (len(bs) > 4):
-                _input = _input.permute(0,1,4,2,3).contiguous().view(bs[0]*bs[1], bs[4], bs[2], bs[3])
+            bs = current_input.size() # Use current_input consistently
+            if (len(bs) == 4): # Assuming (B, H, W, C)
+                current_input = current_input.permute(0,3,1,2) # to (B, C, H, W)
+            if (len(bs) > 4): # Assuming specific 5D format as in FeedForwardSegmentation
+                current_input = current_input.permute(0,1,4,2,3).contiguous().view(bs[0]*bs[1], bs[4], bs[2], bs[3])
 
             # Define that it's a cuda array
             if idx == 0:
-                self.input = _input.cuda() if self.use_cuda else _input
+                self.input_images = current_input.to(self.device) # Use self.device
             elif idx == 1:
-                self.target = Variable(_input.cuda()) if self.use_cuda else Variable(_input)
-                assert self.input.shape[0] == self.target.shape[0]
+                self.input_labels = Variable(current_input.to(self.device)) # Use self.device
+                assert self.input_images.shape[0] == self.input_labels.shape[0]
 
     def forward(self, split):
         if split == 'train':
-            self.prediction = self.net(Variable(self.input))
+            self.prediction = self.net(Variable(self.input_images))
         elif split in ['validation', 'test']:
-            self.prediction = self.net(Variable(self.input, volatile=True))
-            # Apply a softmax and return a segmentation map
-            self.logits = self.apply_argmax_softmax(self.prediction)
-            self.pred = self.logits.data.max(1)[1]
+            with torch.no_grad(): # volatile is deprecated
+                self.prediction = self.net(Variable(self.input_images))
+                # Apply a softmax and return a segmentation map
+                self.logits = self.apply_argmax_softmax(self.prediction)
+                self.pred = self.logits.data.max(1)[1]
 
 
     def backward(self):
-        #print(self.net.apply_argmax_softmax(self.prediction), self.target)
-        self.loss = self.criterion(self.prediction, self.target)
+        #print(self.net.apply_argmax_softmax(self.prediction), self.input_labels)
+        self.loss = self.criterion(self.prediction, self.input_labels) # Use self.input_labels
         self.loss.backward()
 
     def optimize_parameters(self):
         self.net.train()
-        self.forward(split='train')
+        self.forward(split='train') # This will use self.input_images
 
         self.optimizer.zero_grad()
-        self.backward()
+        self.backward() # This will use self.input_labels
         self.optimizer.step()
         
 
@@ -134,7 +139,7 @@ class FeedForwardClassifier(BaseModel):
         self.losses.append(self.loss.item())
         self.pr_probs.append(self.logits.detach().cpu().numpy())
         self.pr_lbls.append(self.pred.cpu().numpy())
-        self.gt_lbls.append(self.target.data.cpu().numpy())
+        self.gt_lbls.append(self.input_labels.data.cpu().numpy()) # Use self.input_labels
 
     def get_classification_stats(self):
         self.pr_lbls = np.concatenate(self.pr_lbls)
@@ -166,16 +171,19 @@ class FeedForwardClassifier(BaseModel):
         return OrderedDict([('CE', np.mean(self.losses))])
 
     def get_current_visuals(self):
-        inp_img = util.tensor2im(self.input, 'img')
+        # Ensure input_images is on CPU for tensor2im
+        inp_img = util.tensor2im(self.input_images.cpu(), 'img') 
         return OrderedDict([('inp_S', inp_img)])
 
     def get_feature_maps(self, layer_name, upscale):
         feature_extractor = HookBasedFeatureExtractor(self.net, layer_name, upscale)
-        return feature_extractor.forward(Variable(self.input))
+        # Ensure input_images is used and on the correct device (already handled by self.input_images)
+        return feature_extractor.forward(Variable(self.input_images))
 
 
     def save(self, epoch_label):
-        self.save_network(self.net, 'S', epoch_label, self.gpu_ids)
+        # self.gpu_ids is deprecated. save_network in BaseModel now handles device correctly.
+        self.save_network(self.net, 'S', epoch_label)
 
     def set_labels(self, labels):
         self.labels = labels
@@ -189,13 +197,15 @@ class FeedForwardClassifier(BaseModel):
     def update_state(self, epoch):
         pass
 
-    def get_fp_bp_time2(self, size=None):
+    def get_fp_bp_time2(self, size=None): # Assuming this is 2D specific
         # returns the fp/bp times of the model
         if size is None:
-            size = (8, 1, 192, 192)
+            # Example size for 2D classifier, adjust as needed
+            size = (8, self.opts.input_nc if hasattr(self.opts, 'input_nc') else 1, 192, 192)
 
-        inp_array = Variable(torch.rand(*size)).cuda()
-        out_array = Variable(torch.rand(*size)).cuda()
+
+        inp_array = Variable(torch.rand(*size)).to(self.device) # Use self.device
+        out_array = Variable(torch.rand(*size)).to(self.device) # Use self.device
         fp, bp = benchmark_fp_bp_time(self.net, inp_array, out_array)
 
         bsize = size[0]

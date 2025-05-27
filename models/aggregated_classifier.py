@@ -17,7 +17,9 @@ class AggregatedClassifier(FeedForwardClassifier):
         self.weight = weight
         self.aggregation = opts.raw.aggregation
         self.aggregation_param = opts.raw.aggregation_param
-        self.aggregation_weight = Variable(weight_t, volatile=True).view(-1,1,1).cuda()
+        # aggregation_weight is likely fixed, so no gradients needed. Move to device.
+        with torch.no_grad():
+            self.aggregation_weight = weight_t.view(-1,1,1).to(self.device)
 
     def compute_loss(self):
         """Compute loss function. Iterate over multiple output"""
@@ -59,11 +61,13 @@ class AggregatedClassifier(FeedForwardClassifier):
 
 
     def forward(self, split):
+        # self.input_images is set by FeedForwardClassifier's set_input method (on the correct device)
         if split == 'train':
-            self.predictions = self.net(Variable(self.input))
+            self.predictions = self.net(Variable(self.input_images))
         elif split in ['validation', 'test']:
-            self.predictions = self.net(Variable(self.input, volatile=True))
-            self.aggregate_output()
+            with torch.no_grad(): # volatile=True is deprecated
+                self.predictions = self.net(Variable(self.input_images))
+                self.aggregate_output()
 
     def backward(self):
         self.compute_loss()
@@ -86,5 +90,6 @@ class AggregatedClassifier(FeedForwardClassifier):
             if epoch == self.opts.raw.late_gate:
                 self.weight = self.opts.raw.weight[:]
                 weight_t = torch.from_numpy(np.array(self.weight, dtype=np.float32))
-                self.aggregation_weight = Variable(weight_t,volatile=True).view(-1,1,1).cuda()
+                with torch.no_grad(): # volatile=True is deprecated
+                    self.aggregation_weight = weight_t.view(-1,1,1).to(self.device)
                 print('='*10,'weight={}'.format(self.weight), '='*10)

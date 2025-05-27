@@ -63,18 +63,43 @@ def train(args):
 
 
     for fold, (train_idx,val_idx) in enumerate(splits.split(np.arange(len(train_dataset)))):
-        #re-init model each fold 
-        model = get_model(json_opts.model)
+        # Add device to json_opts.model so it's passed through get_model -> ModelOpts -> model.initialize
+        json_opts.model.device = device
+        json_opts.model.isTrain = True # Ensure isTrain is set for model initialization
+        
+        # Determine save directory based on config and fold
+        # This will be used by model.initialize (via ModelOpts) and Visualiser
+        base_save_dir = getattr(json_opts.model, 'save_dir_prefix', "./checkpoints")
+        experiment_name = getattr(json_opts.model, 'name', 'unnamed_experiment')
+        # save_dir for model checkpoints, specific to this fold
+        fold_save_dir = os.path.join(base_save_dir, experiment_name, f"fold_{fold}")
+        mkdir(fold_save_dir)
+        json_opts.model.save_dir = fold_save_dir # This will be picked up by ModelOpts
 
+        # get_model will call model.initialize(model_opts) internally.
+        # model_opts will now contain the device.
+        model = get_model(json_opts.model, device) # Pass device to get_model
+        
+        # The following model.initialize call is REMOVED as get_model handles it.
+        # model.initialize(opt=json_opts.model, device=device) 
         
         train_sampler = SubsetRandomSampler(train_idx)
         
         test_sampler = SubsetRandomSampler(val_idx)
+        # Note: pin_memory=True is fine with CPU, but most beneficial with CUDA.
+        # num_workers > 0 can cause issues with CUDA in scripts/debuggers on some systems.
+        # Keep as is for now.
         train_loader = DataLoader(dataset=train_dataset, num_workers=8, batch_size= train_opts.batchSize, shuffle=False,pin_memory=True,persistent_workers=False,sampler=train_sampler)
         valid_loader= DataLoader(dataset=train_dataset, num_workers=8, batch_size= train_opts.batchSize, shuffle=False,pin_memory=True,persistent_workers=False,sampler=test_sampler)
+        
         wanb_config['tags'] = wanb_config['tags']+'_fold_{}'.format(fold)
 
-        visualizer = Visualiser(json_opts.visualisation, save_dir=model.save_dir,resume= False if json_opts.model.continue_train else False,config=wanb_config)
+        # Visualiser needs to know the save_dir, ensure it's consistent with model's save_dir
+        # model.save_dir is now set before initialize, visualizer can use it.
+        visualizer_save_path = os.path.join(json_opts.model.save_dir, json_opts.visualisation.name) # Visualiser might create its own subfolder
+        mkdir(visualizer_save_path)
+        visualizer = Visualiser(json_opts.visualisation, save_dir=visualizer_save_path, resume= False if json_opts.model.continue_train else False, config=wanb_config)
+        
         error_logger = ErrorLogger()
         start_epoch = False if json_opts.training.n_epochs < json_opts.model.which_epoch else json_opts.model.continue_train
         if train_opts.lr_policy == "one_cycle":
@@ -139,13 +164,15 @@ def train(args):
 
             # Save the model parameters
             if epoch % train_opts.save_epoch_freq == 0:
-                model.save(epoch)
-                visualizer.save_model(epoch)
+                model.save(epoch) # model.save internally calls save_network which is now device aware
+                visualizer.save_model(epoch) # This should ideally use model.save_dir or a related path
 
             # Update the model learning rate
             # model.update_learning_rate(errors['Seg_Loss'])
         visualizer.finish()
-        del train_loader,valid_loader
+        del train_loader,valid_loader, model # Explicitly delete model
+        if device.type == 'cuda':
+            torch.cuda.empty_cache() # Clear CUDA cache after each fold
 
 if __name__ == '__main__':
     import argparse
@@ -167,7 +194,21 @@ if __name__ == '__main__':
     parser.add_argument('-out', '--output_nc',   help='Number of output classes', type=int)
     parser.add_argument('-pretrain', '--path_pre_trained_model',   help='path to pre trained model', type=str)
     parser.add_argument('-tag',   help='tags passed to wandb' , type=str,default="")
-    parser.add_argument('--gpu_ids',   help='gpu id to use for trianing' , type=int,default=0)
+    # parser.add_argument('--gpu_ids',   help='gpu id to use for trianing' , type=int,default=0) # Deprecated
+    parser.add_argument('--device', help='Device for training (e.g., "cpu", "cuda", "cuda:0")', type=str, default=None)
     args = parser.parse_args()
 
-    train(args)
+    # Determine device
+    if args.device:
+        selected_device = torch.device(args.device)
+    else:
+        if torch.cuda.is_available():
+            selected_device = torch.device("cuda")
+            print("CUDA is available. Defaulting to GPU.")
+        else:
+            selected_device = torch.device("cpu")
+            print("CUDA not available. Defaulting to CPU.")
+    
+    args.device = selected_device # Store the torch.device object in args for convenience
+
+    train(args, selected_device) # Pass the determined torch.device object
